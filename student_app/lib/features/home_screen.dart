@@ -15,6 +15,7 @@ import 'call_screen.dart';
 import 'chat_screen.dart';
 import 'in_app_notification.dart';
 import 'group_requests_screen.dart';
+import 'ai_study_assistant_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final UserModel currentUser;
@@ -32,7 +33,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     'Find Partners',
     'Study Groups',
     'Sessions',
-    'Notes Sharing'
+    'Notes Sharing',
+    'AI Assistant'
   ];
 
   late final List<Widget> _tabs;
@@ -55,6 +57,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       const GroupsTab(),
       const SessionsTab(),
       const NotesSharingTab(),
+      const AIStudyAssistantScreen(),
     ];
     _listenToIncomingCalls();
     _listenToIncomingMessages();
@@ -362,6 +365,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               icon: Icon(Icons.folder_open_outlined),
               activeIcon: Icon(Icons.folder_open),
               label: 'Notes',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.auto_awesome_outlined),
+              activeIcon: Icon(Icons.auto_awesome),
+              label: 'AI Assistant',
             ),
           ],
         ),
