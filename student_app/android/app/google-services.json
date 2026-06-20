@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "879075674962",
+    "project_id": "studysync-3fa09",
+    "storage_bucket": "studysync-3fa09.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:879075674962:android:a80730a3055f022e8fc88b",
+        "android_client_info": {
+          "package_name": "com.studyfinder.student_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDvKeUsfPCopidt5YuFAiNrUtFV0gOQb8E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
