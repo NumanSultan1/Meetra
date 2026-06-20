@@ -266,7 +266,7 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
           // Banner for API Key status
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: keyActive ? Colors.green.withOpacity(0.1) : Colors.amber.withOpacity(0.1),
+            color: keyActive ? Colors.green.withValues(alpha: 0.1) : Colors.amber.withValues(alpha: 0.1),
             child: Row(
               children: [
                 Icon(
@@ -405,10 +405,10 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B).withOpacity(0.8) : Colors.white,
+                      color: isDark ? const Color(0xFF1E293B).withValues(alpha: 0.8) : Colors.white,
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                        color: (isDark ? Colors.white : Colors.black).withOpacity(0.08),
+                        color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
                       ),
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -470,7 +470,7 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
+              color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
