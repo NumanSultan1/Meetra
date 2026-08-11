@@ -20,6 +20,7 @@ abstract class UserRepository {
 abstract class GroupRepository {
   Future<GroupModel> createGroup(GroupModel group);
   Future<List<GroupModel>> getGroups({String? subject});
+  Stream<List<GroupModel>> getGroupsStream();
   Future<GroupModel> getGroupById(String id);
   Future<void> joinGroup(String groupId, String userId);
   Future<void> leaveGroup(String groupId, String userId);

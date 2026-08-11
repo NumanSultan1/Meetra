@@ -296,11 +296,24 @@ class MessageModel {
 
   factory MessageModel.fromMap(Map<String, dynamic> map, String documentId) {
     DateTime parsedTime;
-    if (map['timestamp'] != null) {
-      try {
-        parsedTime = DateTime.parse(map['timestamp']);
-      } catch (_) {
-        parsedTime = DateTime.now();
+    final ts = map['timestamp'];
+    if (ts != null) {
+      if (ts is String) {
+        try {
+          parsedTime = DateTime.parse(ts);
+        } catch (_) {
+          parsedTime = DateTime.now();
+        }
+      } else {
+        try {
+          parsedTime = (ts as dynamic).toDateTime();
+        } catch (_) {
+          try {
+            parsedTime = ts as DateTime;
+          } catch (_) {
+            parsedTime = DateTime.now();
+          }
+        }
       }
     } else {
       parsedTime = DateTime.now();

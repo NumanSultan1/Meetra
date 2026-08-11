@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:study_finder_shared/study_finder_shared.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../domain/repositories.dart';
 import '../data/repositories_impl.dart';
 
@@ -45,6 +47,29 @@ final reportRepositoryProvider = Provider<ReportRepository>((ref) {
 final authStateProvider = StreamProvider<UserModel?>((ref) {
   final authRepo = ref.watch(authRepositoryProvider);
   return authRepo.onAuthStateChanged;
+});
+
+// Real-time current user document stream provider (resolves H-3)
+final currentUserStreamProvider = StreamProvider<UserModel?>((ref) {
+  final authState = ref.watch(authStateProvider).valueOrNull;
+  if (authState == null) return Stream.value(null);
+
+  return FirebaseFirestore.instance
+      .collection('users')
+      .doc(authState.id)
+      .snapshots()
+      .map((doc) {
+        if (!doc.exists) return authState;
+        if (doc.data()?['suspended'] == true) {
+          FirebaseAuth.instance.signOut();
+          return null;
+        }
+        return UserModel.fromMap(doc.data()!, authState.id);
+      });
+});
+
+final currentUserProvider = Provider<UserModel?>((ref) {
+  return ref.watch(currentUserStreamProvider).valueOrNull;
 });
 
 // Selected chat partner / group provider

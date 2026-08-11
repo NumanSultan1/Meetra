@@ -12,7 +12,8 @@ import '../core/theme.dart';
 
 // ─── Admin Login Screen ───────────────────────────────────────────────────────
 class AdminLoginScreen extends ConsumerStatefulWidget {
-  const AdminLoginScreen({super.key});
+  final String? initialError;
+  const AdminLoginScreen({super.key, this.initialError});
 
   @override
   ConsumerState<AdminLoginScreen> createState() => _AdminLoginScreenState();
@@ -23,6 +24,12 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
   final _passCtrl = TextEditingController();
   bool _loading = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _error = widget.initialError;
+  }
 
   @override
   void dispose() {

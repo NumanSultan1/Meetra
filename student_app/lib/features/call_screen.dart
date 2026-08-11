@@ -143,10 +143,10 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
     if (widget.isReceiver) {
       // Receiver connects call, no ringback needed
     } else {
-      // Caller: play ringback beep (using a verified working public domain sample URL)
+      // Caller: play ringback beep (using our bundled royalty-free asset)
       _ringTonePlayer.setReleaseMode(ReleaseMode.loop);
       try {
-        await _ringTonePlayer.play(UrlSource('https://samplelib.com/mp3/sample-3s.mp3'));
+        await _ringTonePlayer.play(AssetSource('sounds/ringtone.mp3'));
       } catch (_) {}
     }
 
@@ -320,7 +320,7 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
       }
     });
 
-    _ringingTimeoutTimer = Timer(const Duration(seconds: 30), () async {
+    _ringingTimeoutTimer = Timer(const Duration(seconds: 45), () async {
       if (!_isConnected && mounted) {
         await FirebaseFirestore.instance
             .collection('calls')
@@ -378,35 +378,8 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
     final offer = RTCSessionDescription(offerMap['sdp'], offerMap['type']);
     await _peerConnection!.setRemoteDescription(offer);
 
-    final RTCSessionDescription answer = await _peerConnection!.createAnswer({
-      'mandatory': {
-        'OfferToReceiveAudio': true,
-        'OfferToReceiveVideo': widget.isVideo,
-      },
-      'optional': [],
-    });
-    await _peerConnection!.setLocalDescription(answer);
-
-    await FirebaseFirestore.instance
-        .collection('calls')
-        .doc(widget.callId)
-        .update({
-      'answer': {
-        'sdp': answer.sdp,
-        'type': answer.type,
-      }
-    });
-
-    // Mark remote description set, and apply queued caller candidates if any
+    // Mark remote description set, start listening to candidates immediately (resolves H-2)
     _isRemoteDescriptionSet = true;
-    for (final candidate in _remoteCandidatesQueue) {
-      try {
-        await _peerConnection!.addCandidate(candidate);
-      } catch (e) {
-        debugPrint('Error adding queued remote candidate: $e');
-      }
-    }
-    _remoteCandidatesQueue.clear();
 
     _callerCandidatesSubscription = FirebaseFirestore.instance
         .collection('calls')
@@ -434,6 +407,35 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
             }
           }
         }
+      }
+    });
+
+    // Now drain any candidates already queued (though queue is typically populated before setRemoteDescription)
+    for (final candidate in _remoteCandidatesQueue) {
+      try {
+        await _peerConnection!.addCandidate(candidate);
+      } catch (e) {
+        debugPrint('Error adding queued remote candidate: $e');
+      }
+    }
+    _remoteCandidatesQueue.clear();
+
+    final RTCSessionDescription answer = await _peerConnection!.createAnswer({
+      'mandatory': {
+        'OfferToReceiveAudio': true,
+        'OfferToReceiveVideo': widget.isVideo,
+      },
+      'optional': [],
+    });
+    await _peerConnection!.setLocalDescription(answer);
+
+    await FirebaseFirestore.instance
+        .collection('calls')
+        .doc(widget.callId)
+        .update({
+      'answer': {
+        'sdp': answer.sdp,
+        'type': answer.type,
       }
     });
   }
@@ -568,7 +570,7 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
         'senderId': currentUserId,
         'receiverId': widget.receiverId,
         'message': messageText,
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       debugPrint('Failed to log call history to chat: $e');
@@ -600,8 +602,12 @@ class _CallScreenState extends State<CallScreen> with SingleTickerProviderStateM
       _peerConnection?.dispose();
     } catch (_) {}
 
-    _localRenderer.dispose();
-    _remoteRenderer.dispose();
+    try {
+      _localRenderer.dispose();
+    } catch (_) {}
+    try {
+      _remoteRenderer.dispose();
+    } catch (_) {}
   }
 
   void _toggleMute() {

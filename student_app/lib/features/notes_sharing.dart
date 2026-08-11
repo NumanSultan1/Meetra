@@ -626,17 +626,27 @@ class _NotesSharingTabState extends ConsumerState<NotesSharingTab> {
       String downloadUrl;
       if (kIsWeb) {
         final bytes = pickedFile.bytes!;
-        setState(() => _uploadProgress = 0.3);
-        downloadUrl =
-            await CloudinaryService.uploadFile(bytes, fileName);
+        downloadUrl = await CloudinaryService.uploadFile(
+          bytes,
+          fileName,
+          onProgress: (progress) {
+            if (mounted) {
+              setState(() => _uploadProgress = progress);
+            }
+          },
+        );
       } else {
         final file = File(pickedFile.path!);
-        setState(() => _uploadProgress = 0.3);
-        downloadUrl =
-            await CloudinaryService.uploadFile(file, fileName);
+        downloadUrl = await CloudinaryService.uploadFile(
+          file,
+          fileName,
+          onProgress: (progress) {
+            if (mounted) {
+              setState(() => _uploadProgress = progress);
+            }
+          },
+        );
       }
-
-      setState(() => _uploadProgress = 0.7);
 
       final ext = fileName.split('.').last.toLowerCase();
       downloadUrl = '$downloadUrl#ext=$ext';

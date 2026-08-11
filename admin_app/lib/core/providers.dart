@@ -262,3 +262,23 @@ class AdminService {
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 final adminServiceProvider = Provider<AdminService>((ref) => AdminService());
+
+// ─── Admin Check Provider ─────────────────────────────────────────────────────
+final isAdminFutureProvider = FutureProvider.family<bool, String>((ref, uid) async {
+  try {
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    if (userDoc.exists) {
+      final data = userDoc.data();
+      if (data != null && (data['role'] == 'admin' || data['isAdmin'] == true)) {
+        return true;
+      }
+    }
+    final adminDoc = await FirebaseFirestore.instance.collection('admins').doc(uid).get();
+    if (adminDoc.exists) {
+      return true;
+    }
+  } catch (e) {
+    return false;
+  }
+  return false;
+});

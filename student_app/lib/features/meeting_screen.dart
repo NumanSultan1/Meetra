@@ -42,7 +42,7 @@ class _MeetingScreenState extends ConsumerState<MeetingScreen> {
   final Map<String, List<RTCIceCandidate>> _remoteCandidatesQueues = {};
   final Map<String, bool> _remoteDescriptionsSet = {};
 
-  // FIX: Added TURN server — without this, calls fail on mobile data / different networks
+  // Configure STUN/TURN servers for peer connections
   final Map<String, dynamic> _iceConfiguration = {
     'iceServers': [
       {
@@ -103,9 +103,7 @@ class _MeetingScreenState extends ConsumerState<MeetingScreen> {
       debugPrint('Error checking meeting termination: $e');
     }
 
-    // FIX: Admin cleanup now only runs on FIRST creation, not on every rejoin.
-    // Previously, admin joining would delete ALL participants and peer_connections
-    // every time, which destroyed all active WebRTC connections.
+    // Admin cleanup runs on first creation to avoid deleting active connections on rejoin.
     final isAdmin = widget.session.createdBy == currentUserId;
     if (isAdmin) {
       try {
@@ -146,8 +144,7 @@ class _MeetingScreenState extends ConsumerState<MeetingScreen> {
     }
 
     // 1. Initialize local WebRTC renderers and start local stream FIRST
-    // FIX: We must fully await _startLocalStream() before anything else,
-    // so _localStream is guaranteed non-null when peer connections are created.
+    // Await _startLocalStream() so _localStream is ready when peer connections are created.
     await _localRenderer.initialize();
     await _startLocalStream();
 
@@ -255,7 +252,7 @@ class _MeetingScreenState extends ConsumerState<MeetingScreen> {
     final isCaller = currentUserId.compareTo(otherUserId) > 0;
 
     try {
-      // FIX: Ensure local stream is ready before creating peer connection.
+      // Ensure local stream is ready before creating peer connection.
       if (_localStream == null) {
         await _startLocalStream();
       }
@@ -266,7 +263,7 @@ class _MeetingScreenState extends ConsumerState<MeetingScreen> {
       final pc = await createPeerConnection(_iceConfiguration);
       _peerConnections[otherUserId] = pc;
 
-      // FIX: _localStream is now guaranteed non-null here
+      // Local stream is ready
       for (final track in _localStream!.getTracks()) {
         await pc.addTrack(track, _localStream!);
       }
@@ -515,8 +512,7 @@ class _MeetingScreenState extends ConsumerState<MeetingScreen> {
     await _participantRef.update({'cameraOn': newVal});
   }
 
-  // FIX: _toggleSpeaker was empty before — it toggled state but never
-  // actually switched the audio route. Now calls Helper.setSpeakerphoneOn.
+  // Toggle speakerphone audio route.
   Future<void> _toggleSpeaker() async {
     final newVal = !_isSpeakerOn;
     setState(() => _isSpeakerOn = newVal);

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:study_finder_shared/study_finder_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:record/record.dart';
@@ -72,7 +73,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void initState() {
     super.initState();
     _audioRecorder = AudioRecorder();
-    _currentUserId = ref.read(authRepositoryProvider).currentUser?.id ?? '';
+    _currentUserId = ref.read(currentUserProvider)?.id ?? '';
+    if (_currentUserId.isEmpty) {
+      _currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    }
+
+    if (_currentUserId.isEmpty) {
+      debugPrint('Error: _currentUserId is empty in ChatScreen. Cannot initialize chat room.');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error: Unable to load chat session. Please log in again.')),
+          );
+          Navigator.pop(context);
+        }
+      });
+      return;
+    }
+
     if (widget.isGroup) {
       _chatRoomId = widget.receiverId;
     } else {
@@ -359,7 +377,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -590,11 +608,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // Sort original messages by timestamp so they appear in correct order
     msgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
+    final String destRoomId;
+    if (isGroup) {
+      destRoomId = targetId;
+    } else {
+      final ids = [_currentUserId, targetId]..sort();
+      destRoomId = '${ids[0]}_${ids[1]}';
+    }
+
     for (final m in msgs) {
       final newMessage = MessageModel(
         id: FirebaseFirestore.instance.collection('chats').doc().id,
         senderId: _currentUserId,
-        receiverId: targetId,
+        receiverId: destRoomId,
         message: m.message,
         timestamp: DateTime.now(),
       );

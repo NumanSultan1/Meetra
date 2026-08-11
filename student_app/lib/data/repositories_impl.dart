@@ -126,6 +126,7 @@ class MockGroupRepository implements GroupRepository {
   }
   @override Future<List<GroupModel>> getGroups({String? subject}) async =>
     subject?.isNotEmpty == true ? _db.groups.where((g) => g.subject.toLowerCase().contains(subject!.toLowerCase())).toList() : _db.groups;
+  @override Stream<List<GroupModel>> getGroupsStream() => Stream.value(_db.groups);
   @override Future<GroupModel> getGroupById(String id) async =>
     _db.groups.firstWhere((g) => g.id == id, orElse: () => throw Exception('Not found'));
   @override Future<void> joinGroup(String groupId, String userId) async {
@@ -321,7 +322,7 @@ class FirebaseUserRepository implements UserRepository {
 
   @override
   Future<List<UserModel>> searchUsers({String? query, String? semester, String? subject}) async {
-    Query q = _firestore.collection('users');
+    Query q = _firestore.collection('users').limit(50);
     if (semester?.isNotEmpty == true) q = q.where('semester', isEqualTo: semester);
     final snap = await q.get();
     Iterable<UserModel> results = snap.docs.map((d) => UserModel.fromMap(d.data() as Map<String, dynamic>, d.id));
@@ -332,7 +333,7 @@ class FirebaseUserRepository implements UserRepository {
 
   @override
   Future<List<UserModel>> getMatchingPartners(UserModel user) async {
-    final snap = await _firestore.collection('users').get();
+    final snap = await _firestore.collection('users').limit(50).get();
     final list = snap.docs.map((d) => UserModel.fromMap(d.data(), d.id)).where((u) => u.id != user.id).toList();
     final cs = user.subjects.map((s) => s.toLowerCase()).toSet();
     list.sort((a, b) => b.subjects.map((s) => s.toLowerCase()).toSet().intersection(cs).length
@@ -353,6 +354,7 @@ class FirebaseGroupRepository implements GroupRepository {
   }
 
   // Real-time stream for groups
+  @override
   Stream<List<GroupModel>> getGroupsStream() {
     return _firestore.collection('groups').snapshots().map((snap) =>
       snap.docs.map((d) => GroupModel.fromMap(d.data(), d.id)).toList());
@@ -473,13 +475,17 @@ class FirebaseChatRepository implements ChatRepository {
 
   @override
   Stream<List<MessageModel>> getMessages(String chatRoomId) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
     return _firestore
         .collection('chats')
         .doc(chatRoomId)
         .collection('messages')
         .orderBy('timestamp', descending: false)
         .snapshots()
-        .map((snap) => snap.docs.map((d) => MessageModel.fromMap(d.data(), d.id)).toList());
+        .map((snap) => snap.docs
+            .map((d) => MessageModel.fromMap(d.data(), d.id))
+            .where((m) => !m.deletedFor.contains(currentUserId))
+            .toList());
   }
 
   @override
@@ -495,7 +501,9 @@ class FirebaseChatRepository implements ChatRepository {
     
     // 1. Add the message document
     final newMsg = message.copyWith(id: messagesRef.id);
-    batch.set(messagesRef, newMsg.toMap());
+    final map = newMsg.toMap();
+    map['timestamp'] = FieldValue.serverTimestamp();
+    batch.set(messagesRef, map);
     
     // 2. Update parent chat room document metadata
     final chatRoomRef = _firestore.collection('chats').doc(chatRoomId);
@@ -503,7 +511,7 @@ class FirebaseChatRepository implements ChatRepository {
     final isGroup = !chatRoomId.contains('_');
     final Map<String, dynamic> updateData = {
       'lastMessage': message.message,
-      'lastMessageTimestamp': message.timestamp.toIso8601String(),
+      'lastMessageTimestamp': FieldValue.serverTimestamp(),
       'lastMessageSenderId': message.senderId,
     };
     

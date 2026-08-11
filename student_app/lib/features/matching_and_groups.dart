@@ -163,7 +163,7 @@ class _PartnerMatchingTabState extends ConsumerState<PartnerMatchingTab> {
                       final ids = [currentUserId, partner.id]..sort();
                       final roomDocId = '${ids[0]}_${ids[1]}';
                       final meta = _chatMetadata[roomDocId];
-                      final unreadCount = meta?['unread_$currentUserId'] ?? 0;
+                      final unreadCount = (meta?['unread_$currentUserId'] as int?) ?? 0;
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
@@ -249,11 +249,16 @@ class _PartnerMatchingTabState extends ConsumerState<PartnerMatchingTab> {
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-            initialValue: _selectedSemester.isEmpty ? null : _selectedSemester,
+            value: _selectedSemester.isEmpty ? null : _selectedSemester,
             items: const [
-              DropdownMenuItem(value: 'Fall 2026', child: Text('Fall 2026')),
-              DropdownMenuItem(value: 'Spring 2026', child: Text('Spring 2026')),
-              DropdownMenuItem(value: 'Summer 2026', child: Text('Summer 2026')),
+              DropdownMenuItem(value: 'Semester 1', child: Text('Semester 1')),
+              DropdownMenuItem(value: 'Semester 2', child: Text('Semester 2')),
+              DropdownMenuItem(value: 'Semester 3', child: Text('Semester 3')),
+              DropdownMenuItem(value: 'Semester 4', child: Text('Semester 4')),
+              DropdownMenuItem(value: 'Semester 5', child: Text('Semester 5')),
+              DropdownMenuItem(value: 'Semester 6', child: Text('Semester 6')),
+              DropdownMenuItem(value: 'Semester 7', child: Text('Semester 7')),
+              DropdownMenuItem(value: 'Semester 8', child: Text('Semester 8')),
             ],
             onChanged: (val) => setState(() => _selectedSemester = val ?? ''),
           ),
@@ -288,23 +293,9 @@ class GroupsTab extends ConsumerStatefulWidget {
 }
 
 class _GroupsTabState extends ConsumerState<GroupsTab> {
-  List<GroupModel> _groups = [];
-  bool _isLoading = false;
-
-  @override
-  void initState() { super.initState(); _loadGroups(); }
-
-  Future<void> _loadGroups() async {
-    setState(() => _isLoading = true);
-    try {
-      _groups = await ref.read(groupRepositoryProvider).getGroups();
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
 
   Future<void> _requestJoin(GroupModel group) async {
-    final currentUserId = ref.read(authRepositoryProvider).currentUser?.id ?? '';
+    final currentUserId = ref.read(currentUserProvider)?.id ?? ref.read(authRepositoryProvider).currentUser?.id ?? '';
     // Use Firebase method if available
     final repo = ref.read(groupRepositoryProvider);
     if (repo is FirebaseGroupRepository) {
@@ -317,15 +308,13 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Joined group!')));
     }
-    _loadGroups();
   }
 
   Future<void> _leaveGroup(GroupModel group) async {
-    final currentUserId = ref.read(authRepositoryProvider).currentUser?.id ?? '';
+    final currentUserId = ref.read(currentUserProvider)?.id ?? ref.read(authRepositoryProvider).currentUser?.id ?? '';
     await ref.read(groupRepositoryProvider).leaveGroup(group.id, currentUserId);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Left group.')));
-    _loadGroups();
   }
 
   Future<void> _deleteGroup(GroupModel group) async {
@@ -359,7 +348,6 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Group deleted.'), backgroundColor: Colors.orange),
         );
-        _loadGroups();
       }
     } catch (e) {
       if (mounted) {
@@ -481,7 +469,7 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = ref.watch(authRepositoryProvider).currentUser?.id ?? '';
+    final currentUserId = ref.watch(currentUserProvider)?.id ?? ref.watch(authRepositoryProvider).currentUser?.id ?? '';
 
     return Scaffold(
       floatingActionButton: FloatingActionButton(
@@ -490,19 +478,29 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
         onPressed: _showCreateGroupDialog,
         child: const Icon(Icons.add),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _groups.isEmpty
-              ? const Center(child: Text('No study groups yet.'))
-              : ListView.builder(
-                  itemCount: _groups.length,
-                  padding: const EdgeInsets.all(16),
-                  itemBuilder: (context, idx) {
-                    final group = _groups[idx];
-                    final isMember = group.members.contains(currentUserId);
-                    final isAdmin = group.createdBy == currentUserId;
-                    final pendingMembers = (group.toMap()['pendingMembers'] as List?)?.cast<String>() ?? [];
-                    final hasPendingRequest = pendingMembers.contains(currentUserId);
+      body: StreamBuilder<List<GroupModel>>(
+        stream: ref.watch(groupRepositoryProvider).getGroupsStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          final groups = snapshot.data ?? [];
+          if (groups.isEmpty) {
+            return const Center(child: Text('No study groups yet.'));
+          }
+
+          return ListView.builder(
+            itemCount: groups.length,
+            padding: const EdgeInsets.all(16),
+            itemBuilder: (context, idx) {
+              final group = groups[idx];
+              final isMember = group.members.contains(currentUserId);
+              final isAdmin = group.createdBy == currentUserId;
+              final pendingMembers = (group.toMap()['pendingMembers'] as List?)?.cast<String>() ?? [];
+              final hasPendingRequest = pendingMembers.contains(currentUserId);
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 16),
@@ -558,14 +556,12 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
                                       if (repo is FirebaseGroupRepository) {
                                         await repo.approveJoin(group.id, uid);
                                       }
-                                      _loadGroups();
                                     },
                                     onReject: () async {
                                       final repo = ref.read(groupRepositoryProvider);
                                       if (repo is FirebaseGroupRepository) {
                                         await repo.rejectJoin(group.id, uid);
                                       }
-                                      _loadGroups();
                                     },
                                   )),
                                 ]),
@@ -612,7 +608,9 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
                       ),
                     );
                   },
-                ),
+                );
+        },
+      ),
     );
   }
 
@@ -719,13 +717,26 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
             onPressed: () async {
-              if (nameCtrl.text.isEmpty || subCtrl.text.isEmpty) return;
-              final currentUserId = ref.read(authRepositoryProvider).currentUser?.id ?? '';
+              final name = nameCtrl.text.trim();
+              final sub = subCtrl.text.trim();
+              if (name.isEmpty || sub.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Please enter a valid group name and subject.')),
+                );
+                return;
+              }
+              if (name.length > 50 || sub.length > 50) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Name and Subject must be 50 characters or less.')),
+                );
+                return;
+              }
+              final currentUserId = ref.read(currentUserProvider)?.id ?? ref.read(authRepositoryProvider).currentUser?.id ?? '';
               final group = GroupModel(
                 id: '',
-                name: nameCtrl.text.trim(),
+                name: name,
                 description: descCtrl.text.trim(),
-                subject: subCtrl.text.trim(),
+                subject: sub,
                 semester: chosenSemester,
                 createdBy: currentUserId,
                 members: [currentUserId],
@@ -733,7 +744,6 @@ class _GroupsTabState extends ConsumerState<GroupsTab> {
               await ref.read(groupRepositoryProvider).createGroup(group);
               if (!ctx.mounted) return;
               Navigator.pop(ctx);
-              _loadGroups();
             },
             child: const Text('Create', style: TextStyle(fontWeight: FontWeight.bold)),
           ),

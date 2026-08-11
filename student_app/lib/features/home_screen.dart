@@ -46,6 +46,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Set<String> _notifiedRequests = {};
   bool _isRequestsInitialLoad = true;
   bool _isCallDialogShowing = false;
+  String? _activeCallId;
   late final DateTime _appStartTime;
 
   @override
@@ -83,8 +84,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final doc = snapshot.docs.first;
         final data = doc.data();
         final callId = doc.id;
+
+        if (_activeCallId == callId) return; // Prevent duplicate trigger for the same call!
         
         if (!_isCallDialogShowing && mounted) {
+          _activeCallId = callId;
           final callerName = data['callerName'] ?? 'Student';
           final isVideo = data['isVideo'] == true;
           NotificationService.showNotification(
@@ -113,12 +117,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           final lastSender = data['lastMessageSenderId'] as String?;
           final lastMessage = data['lastMessage'] as String?;
-          final timestampStr = data['lastMessageTimestamp'] as String?;
+          final timestampVal = data['lastMessageTimestamp'];
 
-          if (lastSender == null || lastMessage == null || timestampStr == null) continue;
+          if (lastSender == null || lastMessage == null || timestampVal == null) continue;
           if (lastSender == widget.currentUser.id) continue;
 
-          final timestamp = DateTime.tryParse(timestampStr);
+          DateTime? timestamp;
+          if (timestampVal is String) {
+            timestamp = DateTime.tryParse(timestampVal);
+          } else {
+            try {
+              timestamp = (timestampVal as dynamic).toDateTime();
+            } catch (_) {}
+          }
           if (timestamp == null || timestamp.isBefore(_appStartTime)) continue;
 
           // Only notify if we are not actively in that chat room
@@ -136,10 +147,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final senderUser = await userRepo.getUser(senderId);
       
       String displayMessage = messageText;
-      if (displayMessage.startsWith('[IMAGE]:')) displayMessage = '📷 Photo';
-      if (displayMessage.startsWith('[FILE]:')) displayMessage = '📄 File';
-      if (displayMessage.startsWith('[VIDEO]:')) displayMessage = '🎥 Video';
-      if (displayMessage.startsWith('[AUDIO]:')) displayMessage = '🎵 Voice Note';
+      final cleanMsg = displayMessage.toUpperCase().trim();
+      if (cleanMsg.startsWith('[IMAGE]:') || cleanMsg.startsWith('[IMAGE]')) {
+        displayMessage = '📷 Photo';
+      } else if (cleanMsg.startsWith('[FILE]:') || cleanMsg.startsWith('[FILE]')) {
+        displayMessage = '📄 File';
+      } else if (cleanMsg.startsWith('[VIDEO]:') || cleanMsg.startsWith('[VIDEO]')) {
+        displayMessage = '🎥 Video';
+      } else if (cleanMsg.startsWith('[AUDIO]:') || cleanMsg.startsWith('[AUDIO]')) {
+        displayMessage = '🎵 Voice Note';
+      }
 
       NotificationService.showNotification(
         id: chatRoomId.hashCode,
@@ -232,17 +249,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _isCallDialogShowing = true;
     });
     
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => IncomingCallDialog(callId: callId, data: data),
-    ).then((_) {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => IncomingCallDialog(callId: callId, data: data),
+      ).then((_) {
+        if (mounted) {
+          setState(() {
+            _isCallDialogShowing = false;
+            _activeCallId = null;
+          });
+        }
+      }).catchError((err) {
+        if (mounted) {
+          setState(() {
+            _isCallDialogShowing = false;
+            _activeCallId = null;
+          });
+        }
+      });
+    } catch (_) {
       if (mounted) {
         setState(() {
           _isCallDialogShowing = false;
+          _activeCallId = null;
         });
       }
-    });
+    }
   }
 
   @override
@@ -391,12 +425,20 @@ class IncomingCallDialog extends StatefulWidget {
 class _IncomingCallDialogState extends State<IncomingCallDialog> {
   StreamSubscription? _callSub;
   late final AudioPlayer _audioPlayer;
+  Timer? _ringingTimeoutTimer;
   bool _actionTaken = false;
 
   @override
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
+
+    // Auto-timeout after 45 seconds to prevent stale ringing dialogs if offline or events are missed
+    _ringingTimeoutTimer = Timer(const Duration(seconds: 45), () {
+      if (mounted) {
+        _declineCall();
+      }
+    });
     
     // Set audio context to force output to speaker or appropriate channels (fixes routing volume issues)
     try {
@@ -417,10 +459,10 @@ class _IncomingCallDialogState extends State<IncomingCallDialog> {
       _audioPlayer.setAudioContext(playerContext);
     } catch (_) {}
 
-    // Play ringing sound on loop (using a verified working public domain sample URL)
+    // Play ringing sound on loop (using our bundled royalty-free asset)
     _audioPlayer.setReleaseMode(ReleaseMode.loop);
     try {
-      _audioPlayer.play(UrlSource('https://samplelib.com/mp3/sample-9s.mp3'));
+      _audioPlayer.play(AssetSource('sounds/ringtone.mp3'));
     } catch (_) {}
 
     // Listen to call doc changes
@@ -452,6 +494,7 @@ class _IncomingCallDialogState extends State<IncomingCallDialog> {
   @override
   void dispose() {
     _callSub?.cancel();
+    _ringingTimeoutTimer?.cancel();
     _audioPlayer.stop();
     _audioPlayer.dispose();
     super.dispose();

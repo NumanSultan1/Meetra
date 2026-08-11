@@ -17,11 +17,17 @@ class SessionsTab extends ConsumerStatefulWidget {
   ConsumerState<SessionsTab> createState() => _SessionsTabState();
 }
 
+class _AlarmInfo {
+  final DateTime date;
+  final Timer timer;
+  _AlarmInfo({required this.date, required this.timer});
+}
+
 class _SessionsTabState extends ConsumerState<SessionsTab> {
   List<SessionModel> _sessions = [];
   bool _isLoading = false;
   Timer? _stateRefreshTimer;
-  final List<Timer> _scheduledSessionTimers = [];
+  final Map<String, _AlarmInfo> _scheduledSessionAlarms = {};
 
   @override
   void initState() {
@@ -37,14 +43,14 @@ class _SessionsTabState extends ConsumerState<SessionsTab> {
   @override
   void dispose() {
     _stateRefreshTimer?.cancel();
-    for (final t in _scheduledSessionTimers) {
-      t.cancel();
+    for (final alarm in _scheduledSessionAlarms.values) {
+      alarm.timer.cancel();
     }
     super.dispose();
   }
 
   Future<void> _loadSessions({bool showSpinner = true}) async {
-    if (showSpinner) {
+    if (showSpinner && _sessions.isEmpty) {
       setState(() => _isLoading = true);
     }
     try {
@@ -59,7 +65,7 @@ class _SessionsTabState extends ConsumerState<SessionsTab> {
         setState(() {
           _sessions = visible;
         });
-        final currentUserId = ref.read(authRepositoryProvider).currentUser?.id ?? '';
+        final currentUserId = ref.read(currentUserProvider)?.id ?? ref.read(authRepositoryProvider).currentUser?.id ?? '';
         _scheduleSessionAlarms(visible, currentUserId);
       }
     } catch (_) {
@@ -72,39 +78,77 @@ class _SessionsTabState extends ConsumerState<SessionsTab> {
   }
 
   void _scheduleSessionAlarms(List<SessionModel> sessions, String currentUserId) {
-    for (final timer in _scheduledSessionTimers) {
-      timer.cancel();
-    }
-    _scheduledSessionTimers.clear();
-
     final now = DateTime.now();
+    final activeSessionIds = <String>{};
+
     for (final session in sessions) {
       if (session.participants.contains(currentUserId)) {
-        if (session.date.isAfter(now)) {
-          final difference = session.date.difference(now);
+        activeSessionIds.add(session.id);
+
+        // If an alarm is already scheduled for this session and its date hasn't changed, skip rescheduling
+        if (_scheduledSessionAlarms.containsKey(session.id) &&
+            _scheduledSessionAlarms[session.id]!.date == session.date) {
+          continue;
+        }
+
+        // Otherwise, cancel any existing alarm for this session
+        if (_scheduledSessionAlarms.containsKey(session.id)) {
+          _scheduledSessionAlarms[session.id]!.timer.cancel();
+          _scheduledSessionAlarms.remove(session.id);
+        }
+
+        // Calculate alarm time (5 minutes before session starts)
+        final alarmTime = session.date.subtract(const Duration(minutes: 5));
+
+        if (alarmTime.isAfter(now)) {
+          final difference = alarmTime.difference(now);
           final timer = Timer(difference, () {
             if (mounted) {
-              _triggerSessionStartNotification(session);
+              _triggerSessionStartNotification(session, minutesBefore: 5);
               setState(() {});
             }
           });
-          _scheduledSessionTimers.add(timer);
+          _scheduledSessionAlarms[session.id] = _AlarmInfo(date: session.date, timer: timer);
+        } else if (session.date.isAfter(now)) {
+          // Less than 5 minutes remain, fire immediately/soon
+          final remainingMinutes = session.date.difference(now).inMinutes;
+          final timer = Timer(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              _triggerSessionStartNotification(session, minutesBefore: remainingMinutes);
+              setState(() {});
+            }
+          });
+          _scheduledSessionAlarms[session.id] = _AlarmInfo(date: session.date, timer: timer);
         }
       }
     }
+
+    // Clean up any alarms for sessions that are no longer active
+    final removedIds = _scheduledSessionAlarms.keys.where((id) => !activeSessionIds.contains(id)).toList();
+    for (final id in removedIds) {
+      _scheduledSessionAlarms[id]!.timer.cancel();
+      _scheduledSessionAlarms.remove(id);
+    }
   }
 
-  void _triggerSessionStartNotification(SessionModel session) {
+  void _triggerSessionStartNotification(SessionModel session, {int minutesBefore = 0}) {
+    final String bodyText;
+    if (minutesBefore > 0) {
+      bodyText = 'Your study session "${session.title}" starts in $minutesBefore minutes! Tap to prepare.';
+    } else {
+      bodyText = 'Your study session "${session.title}" has started! Tap to join the meeting.';
+    }
+
     NotificationService.showNotification(
       id: session.id.hashCode,
-      title: 'Class Session Started',
-      body: 'Your study session "${session.title}" has started! Tap to join the meeting.',
+      title: 'Study Session Reminder',
+      body: bodyText,
     );
     if (mounted) {
       InAppNotificationManager.show(
         context: context,
-        title: 'Class Session Started',
-        body: 'Your study session "${session.title}" has started! Tap to join the meeting.',
+        title: 'Study Session Reminder',
+        body: bodyText,
         onTap: () => _onJoinMeetingPressed(context, session),
       );
     }
@@ -386,21 +430,33 @@ class _SessionsTabState extends ConsumerState<SessionsTab> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
             onPressed: () async {
-              if (titleCtrl.text.isNotEmpty && subCtrl.text.isNotEmpty) {
-                final currentUserId = ref.read(authRepositoryProvider).currentUser?.id ?? '';
-                final newSession = SessionModel(
-                  id: '',
-                  title: titleCtrl.text.trim(),
-                  subject: subCtrl.text.trim(),
-                  date: selectedDateTime,
-                  createdBy: currentUserId,
-                  participants: [currentUserId],
+              final title = titleCtrl.text.trim();
+              final sub = subCtrl.text.trim();
+              if (title.isEmpty || sub.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Please enter a valid session title and subject.')),
                 );
-                await ref.read(sessionRepositoryProvider).createSession(newSession);
-                if (!ctx.mounted) return;
-                Navigator.pop(ctx);
-                _loadSessions();
+                return;
               }
+              if (title.length > 50 || sub.length > 50) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Title and Subject must be 50 characters or less.')),
+                );
+                return;
+              }
+              final currentUserId = ref.read(currentUserProvider)?.id ?? ref.read(authRepositoryProvider).currentUser?.id ?? '';
+              final newSession = SessionModel(
+                id: '',
+                title: title,
+                subject: sub,
+                date: selectedDateTime,
+                createdBy: currentUserId,
+                participants: [currentUserId],
+              );
+              await ref.read(sessionRepositoryProvider).createSession(newSession);
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+              _loadSessions();
             },
             child: const Text('Schedule', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
