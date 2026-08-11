@@ -35,7 +35,6 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   url_launcher: ^6.2.0
   http: ^1.2.0
-  crypto: ^3.0.3
   image_picker: ^1.0.0
   file_picker: ^8.0.0
   cupertino_icons: ^1.0.8
@@ -84,9 +83,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/sounds/ringtone.mp3
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

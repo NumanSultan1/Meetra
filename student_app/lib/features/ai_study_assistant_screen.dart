@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../core/theme.dart';
+import '../core/secrets.dart';
 
 class AIStudyAssistantScreen extends StatefulWidget {
   const AIStudyAssistantScreen({super.key});
@@ -30,10 +31,12 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
   bool _isLoading = false;
   String _customApiKey = '';
 
-  // Get active API key (from environment variable or user manual input)
+  // Get active Gemini API key (user custom key takes highest priority, then environment variable, then default)
   String get _apiKey {
-    const envKey = String.fromEnvironment('CLAUDE_API_KEY');
-    return envKey.isNotEmpty ? envKey : _customApiKey;
+    if (_customApiKey.isNotEmpty) return _customApiKey;
+    const envKey = String.fromEnvironment('GEMINI_API_KEY');
+    if (envKey.isNotEmpty) return envKey;
+    return defaultGeminiApiKey;
   }
 
   // Pre-defined study prompt suggestions
@@ -59,10 +62,10 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
   @override
   void initState() {
     super.initState();
-    // Add welcome message from Claude
+    // Add welcome message from Gemini
     _messages.add(
       ChatMessage(
-        text: "Hi! I am your AI Study Assistant powered by Claude. How can I help you study today?",
+        text: "Hi! I am your AI Study Assistant powered by Gemini. How can I help you study today?",
         isUser: false,
         timestamp: DateTime.now(),
       ),
@@ -110,7 +113,7 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
         _isLoading = false;
         _messages.add(
           ChatMessage(
-            text: "Error: No API key found. Please input your Claude API key in the settings panel at the top of the screen to start chatting.",
+            text: "Error: No API key found. Please input your Gemini API key in the settings panel at the top of the screen to start chatting.",
             isUser: false,
             timestamp: DateTime.now(),
           ),
@@ -121,32 +124,30 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
     }
 
     try {
-      // Build Anthropic Claude request payload containing the conversation history
+      // Build Google Gemini request payload containing the conversation history
       final history = _messages.skip(1).map((msg) {
         return {
-          'role': msg.isUser ? 'user' : 'assistant',
-          'content': msg.text,
+          'role': msg.isUser ? 'user' : 'model',
+          'parts': [{'text': msg.text}],
         };
       }).toList();
 
       final response = await http.post(
-        Uri.parse('https://api.anthropic.com/v1/messages'),
+        Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$_apiKey'),
         headers: {
           'content-type': 'application/json',
-          'x-api-key': _apiKey,
-          'anthropic-version': '2023-06-01',
         },
         body: jsonEncode({
-          'model': 'claude-3-5-sonnet-20241022',
-          'max_tokens': 1024,
-          'system': 'You are an intelligent, friendly, and expert AI Study Assistant. Help the student understand academic topics, write study guides, explain code, and structure their study time efficiently.',
-          'messages': history,
+          'contents': history,
+          'systemInstruction': {
+            'parts': [{'text': 'You are an intelligent, friendly, and expert AI Study Assistant. Help the student understand academic topics, write study guides, explain code, and structure their study time efficiently.'}]
+          }
         }),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final replyText = data['content'][0]['text'] as String;
+        final replyText = data['candidates'][0]['content']['parts'][0]['text'] as String;
 
         setState(() {
           _messages.add(
@@ -174,7 +175,7 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
       setState(() {
         _messages.add(
           ChatMessage(
-            text: "Failed to connect to Claude. Please check your internet connection.",
+            text: "Failed to connect to Gemini. Please check your internet connection.",
             isUser: false,
             timestamp: DateTime.now(),
           ),
@@ -193,14 +194,14 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
     showDialog(
       context: context,
       builder: (context) => PremiumDialog(
-        title: 'Claude API Key Settings',
+        title: 'Gemini API Key Settings',
         icon: Icons.key,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Enter your personal Anthropic Claude API Key below. This key will be saved for this session.',
+              'Enter your personal Google Gemini API Key below. This key will be saved for this session.',
               style: TextStyle(fontSize: 14, color: Colors.white70),
             ),
             const SizedBox(height: 16),
@@ -208,7 +209,7 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
               controller: _apiKeyController,
               decoration: const InputDecoration(
                 labelText: 'API Key',
-                hintText: 'sk-ant-...',
+                hintText: 'AIzaSy...',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.vpn_key),
               ),
@@ -227,7 +228,7 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Text(
-                '--dart-define=CLAUDE_API_KEY=your_key',
+                '--dart-define=GEMINI_API_KEY=your_key',
                 style: TextStyle(fontFamily: 'monospace', fontSize: 10, color: Colors.amber),
               ),
             ),
@@ -278,7 +279,7 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
                 Expanded(
                   child: Text(
                     keyActive
-                        ? 'Claude API connection active'
+                        ? 'Gemini API connection active'
                         : 'API Key missing. Click Settings to add it.',
                     style: TextStyle(
                       fontSize: 12,
@@ -341,10 +342,9 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
                             Text(
                               suggestion['title']!,
                               style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryBlue,
-                              ),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryBlue),
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -381,7 +381,7 @@ class _AIStudyAssistantScreenState extends State<AIStudyAssistantScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Claude is thinking',
+                          'Gemini is thinking',
                           style: TextStyle(fontSize: 12, color: Colors.white60),
                         ),
                         SizedBox(width: 8),
